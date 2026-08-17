@@ -1,170 +1,162 @@
-# Phase 0 — resume here
+# Phase 0 — COMPLETE
 
-Last updated: 2026-08-18. Read this first if you are picking up a fresh session.
+Last updated: 2026-08-18. Phase 0 is done and verified. Kept as the record of
+what was proven and what bit us, because the next person to set up a machine
+will hit the same two traps.
 
-## Read these, in order
+## Result
 
-1. `CLAUDE.md` — project brief
-2. `docs/phase-0-spec.md` — what Phase 0 must prove
-3. `docs/phase-0-plan.md` — the four tasks, with exact commands
-4. `.superpowers/sdd/phase-0-plan/progress.md` — the SDD ledger (git-ignored, local to this machine; holds every ruling made so far)
+All four tasks passed their gates. Every claim below was produced by running the
+thing, not by reading docs.
 
-## Process in use
-
-Executing `docs/phase-0-plan.md` directly on `main` — the human partner
-explicitly approved working on main and explicitly declined git worktrees. Do
-not create a branch.
-
-## Where things stand
-
-| Task | State |
+| Check | Evidence |
 |---|---|
-| 1 — Scaffold | Code complete (`5703f3c`). **Simulator render gate NOT passed** — blocked, see below. |
-| 2 — API route + env | **DONE and verified** (`ee11f99`). |
-| 3 — Screen fetches route | Code complete (`b1664da`). **Simulator render gate NOT passed** — same blocker. |
-| 4 — Bundle audit + CLAUDE.md | Audit DONE and verified. `CLAUDE.md` update deliberately withheld — see below. |
+| Simulator renders the route response | `{"ok":true,"keyLoaded":true}` on screen, nav title `index`, no Expo Go chrome |
+| Dev server serves the route | `curl localhost:8081/api/health` → `{"ok":true,"keyLoaded":true}`, HTTP 200 |
+| Tests | `npm test` → 2 passed |
+| Secret value absent from bundle | `grep -r 'hunter2' dist/` → 0 hits |
+| Key name absent from client bundle | `grep -r 'FAKE_KEY' dist/` → 0 hits |
+| Secret scope | only `app/api/health+api.ts` references `FAKE_KEY` under `app/` |
+| Env hygiene | `.env` untracked, `.env.example` tracked with `replace_me` |
+| Clean build from scratch | `rm -rf ios && npx expo run:ios` → Build Succeeded in ~140s |
 
-Everything through `b1664da` is pushed to `origin/main`.
+The export produced `dist`, `dist/_expo`, `dist/assets`, `dist/_expo/static` —
+**no `dist/server` or `dist/client`, so Task 4 Branch B applied** and the key-name
+grep ran over all of `dist/`.
 
-## What is verified, with evidence
+## What this settles for later phases
 
-- **`npm test` — 2 passed.** `__tests__/health-route.test.ts`, both cases.
-- **`curl http://localhost:8081/api/health` → `{"ok":true,"keyLoaded":true}`, HTTP 200.**
-  API routes resolve on the dev server, and `.env` loads into them. This is the
-  single biggest thing Phase 0 existed to de-risk, and it works.
-- **Secret containment — PASS.** `npx expo export --platform ios` produced:
-  `dist`, `dist/_expo`, `dist/assets`, `dist/_expo/static`. **No `dist/server`
-  or `dist/client`, so Task 4 Branch B applied** — the whole export is client
-  output. `grep -r 'hunter2' dist/` → zero hits. `grep -r 'FAKE_KEY' dist/` →
-  zero hits. The value never reaches the bundle, and neither does the key name.
-- **Scope — PASS.** The only file under `app/` referencing `FAKE_KEY` is
-  `app/api/health+api.ts`.
-- **`.env` untracked, `.env.example` tracked** with `replace_me`.
+- **Relative `fetch` from native works in development.** `fetch('/api/health')`
+  from `app/index.tsx` reached the API route on the iOS Simulator.
+- **The `:3001` Node server fallback is unnecessary.** Do not hedge for it.
+- **The model API key can live in an API route.** That was the real question
+  behind this phase, and the answer is yes.
+- **Not proven:** the `origin` setting for *production* native builds. We only
+  ran dev. See `CLAUDE.md`.
 
-## What is NOT verified
+## Two traps that cost this phase a day
 
-The app has still never been observed rendering in the Simulator. That gate
-covers Task 1 Step 7 and Task 3 Steps 2–3. Everything else in Phase 0 is green.
+Both are recorded in `CLAUDE.md` as well, because that is the file everyone reads.
 
-`CLAUDE.md` has deliberately **not** been given its `### Verified 17 Aug 2026`
-subsection yet. That text asserts "relative `fetch` from native resolves to the
-dev server origin", which the curl check does *not* prove — curl proves the
-server side only. Writing an unverified claim into shared memory is exactly the
-failure that document exists to prevent. Add it once the Simulator renders.
+### 1. Never keep this repo in an iCloud-synced folder
 
-## The blocker: iCloud is stamping the build products
-
-`npx expo run:ios` fails at codesign:
+With "Desktop & Documents Folders" sync on, iCloud's fileprovider stamps
+`com.apple.FinderInfo` onto framework bundles seconds after they are created,
+and `codesign` refuses to sign anything carrying it:
 
 ```
 ExpoModulesJSI.framework: resource fork, Finder information, or similar detritus not allowed
 Command PhaseScriptExecution failed with a nonzero exit code
 ```
 
-**Cause, proven not guessed.** This repo lives in `~/Desktop`, and "Desktop &
-Documents Folders" iCloud sync is ON. iCloud's fileprovider stamps
-`com.apple.FinderInfo` onto framework bundles, and `codesign` refuses to sign
-anything carrying it.
+`xattr -cr` does **not** fix it — the framework is re-created during the build
+and re-stamped mid-build, so any strip-before-sign workaround is racing a
+process that wins in under six seconds.
 
-The probe that settled it: a brand-new `probe.framework` directory created in
-`~/Desktop/Faisal` had `com.apple.FinderInfo` and `com.apple.fileprovider.fpfs#P`
-within **6 seconds**. The identical directory created in `/tmp` got only
-`com.apple.provenance`, which is harmless.
+Resolved on this machine by turning that iCloud setting off. The repo lives at
+`/Users/yacine/Desktop/Faisal` and builds fine now that sync is off.
 
-**`xattr -cr` does not fix this.** It was tried; the build re-creates the
-framework and iCloud re-stamps it mid-build. Any fix that strips attributes
-before signing is racing a process that wins in under six seconds.
-
-**Resolution chosen by the human partner: turn off iCloud "Desktop & Documents
-Folders" sync**, keeping the repo at `~/Desktop/Faisal`. Options considered and
-declined: moving the repo to a non-synced path, and patching Expo's build script
-to strip attributes before signing (rejected as race-prone — intermittent build
-failures are the worst possible failure mode before a live stage demo).
-
-A backup was taken before the toggle, because disabling that setting can move
-Desktop files into iCloud Drive: `~/faisal-backup-20260818` (git history, `.env`,
-and the ledger; no `node_modules`/`ios`).
-
-### Once sync is off, resume here
+**Diagnostic, ten seconds:**
 
 ```bash
-# 1. Confirm the stamping actually stopped
-mkdir -p /Users/yacine/Desktop/Faisal/.xatest/probe.framework
-sleep 6
-xattr -lr /Users/yacine/Desktop/Faisal/.xatest    # must NOT list com.apple.FinderInfo
-rm -rf /Users/yacine/Desktop/Faisal/.xatest
+mkdir -p probe.framework && sleep 10 && xattr -lr probe.framework && rm -rf probe.framework
+```
 
-# 2. Clear the attributes already on disk, then build
-cd /Users/yacine/Desktop/Faisal
-xattr -cr node_modules/expo-modules-jsi ios
-npx expo start                                    # Metro, separate shell
+`com.apple.provenance` alone is healthy. `com.apple.FinderInfo` means the build
+cannot codesign, wherever that directory lives.
+
+### 2. `patches/expo-modules-jsi+57.0.4.patch` is required on Xcode 26.2
+
+ExpoModulesJSI does not compile under Swift 6.2.3 — in
+`JavaScriptCodable+Date.swift` the bare `abs(_:)` is ambiguous because the module
+builds with Swift/C++ interop and libc++ contributes its own `abs` overloads.
+`Swift.abs` fixes it with identical behaviour. Applied by `patch-package` on
+`postinstall`. 57.0.4 was the latest published version as of 18 Aug 2026, so
+there is no upstream release to upgrade to instead.
+
+Verified as genuinely upstream before patching: the file is byte-identical to
+the published npm tarball, and the snippet type-checks standalone.
+
+## How to run it
+
+```bash
+npm install                                        # postinstall applies the patch
+cp .env.example .env                               # then set FAKE_KEY=hunter2
+npx expo start                                     # Metro, leave running
 npx expo run:ios --device "iPhone 17 Pro" --no-bundler
+```
 
-# 3. Evidence
+**`run:ios`, never `start --ios`.** `start --ios` runs the project inside Expo
+Go, whose one-time onboarding overlay must be tapped away, and this machine has
+no attached display — `screencapture` fails with "could not create image from
+rect", so coordinate clicks are impossible. `xcrun simctl io booted screenshot`
+still works because it reads the CoreSimulator framebuffer directly. The
+Simulator is **observable but not touchable.**
+
+### The deep-link dialog
+
+`run:ios` finishes by opening `com.anonymous.faisal://expo-development-client/?url=...`,
+which makes iOS show an **"Open in 'faisal'?"** confirmation that covers the app
+and cannot be tapped away here. It is not a failure — the app is installed and
+running behind it.
+
+To get a clean screen without touching the UI:
+
+```bash
+xcrun simctl shutdown booted && xcrun simctl boot <DEVICE_UDID>
+xcrun simctl launch booted com.anonymous.faisal
 xcrun simctl io booted screenshot /tmp/phase0-simulator.png
 ```
 
-Expected on screen: `{"ok":true,"keyLoaded":true}`. **Read the screenshot back
-rather than assuming.** If it shows `ERROR:`, relative `fetch` is not resolving
-on native — STOP and report. Do not add an absolute URL, an `origin` config
-entry, or the `:3001` Node server; that is the team's call and is precisely the
-finding this phase exists to produce.
+Rebooting clears the pending URL, so the dialog does not reappear. Then read the
+screenshot back rather than assuming.
 
-Then: add the `CLAUDE.md` subsection (Task 4 Step 6), `npm test`, commit
-`phase 0: expo skeleton + server-side API route`, push.
+## Constraints worth keeping
 
-## Second toolchain fix, already applied
-
-`patches/expo-modules-jsi+57.0.4.patch`, applied by `patch-package` on
-`postinstall`. ExpoModulesJSI does not compile under Xcode 26.2 / Swift 6.2.3:
-in `JavaScriptCodable+Date.swift` the bare `abs(_:)` is ambiguous because the
-module builds with Swift/C++ interop and libc++ contributes its own `abs`
-overloads. `Swift.abs` disambiguates it, same behaviour. 57.0.4 is the latest
-published version — there is no upstream fix to move to.
-
-**Correction to the previous handoff.** It recorded "the native build SUCCEEDS"
-with a path to `faisal.app`. That was wrong: the bundle at that path contained
-only an empty `Frameworks/` directory — no binary, no `Info.plist` — which is
-why `simctl install` reported "Missing bundle ID". The build had never succeeded.
-
-## Hard-won constraints — do not relearn these
-
-1. **Use `npx expo run:ios`, never `npx expo start --ios`.** `start --ios` runs
-   the project inside Expo Go, whose one-time onboarding overlay must be tapped
-   away. This machine has **no attached display** — `screencapture` fails with
-   "could not create image from rect" — so coordinate clicks cannot dismiss it.
-   `xcrun simctl io booted screenshot` works because it reads the CoreSimulator
-   framebuffer directly, so the Simulator is **observable but not touchable**.
-2. **Never attempt GUI automation** against the Simulator, and **never edit any
+1. **Never attempt GUI automation** against the Simulator, and **never edit any
    app's internal storage** to clear UI flags. An earlier agent started doing
-   this and was killed for it — it produces a green result that proves nothing.
-3. **Bound every wait.** Poll; never sit in an open-ended wait on a build. A
+   this and was stopped — it produces a green result that proves nothing.
+2. **Bound every wait.** Poll; never sit in an open-ended wait on a build. A
    BLOCKED report with a real error is a useful result.
-4. **Watch the shell's working directory.** It persists between commands. One
+3. **Watch the shell's working directory.** It persists between commands. One
    build failed with `ConfigError: The expected package.json path:
-   .../node_modules/expo-modules-jsi/apple/Sources/package.json does not exist`
-   purely because an earlier `cd` was still in effect.
-5. **When regenerating the patch, delete the generated directories first**
+   .../expo-modules-jsi/apple/Sources/package.json does not exist` purely
+   because an earlier `cd` was still in effect.
+4. **When regenerating the patch, delete the generated directories first**
    (`apple/.DerivedData`, `apple/Products`, `apple/.generated`). Otherwise
-   `patch-package` sweeps build output into the patch — the first attempt
-   produced 7.8 MB, including a modulemap with an absolute local path. The
-   correct patch is ~1 KB and touches exactly one file.
-6. If tools suddenly return `EPERM` / "Operation not permitted" on this
-   directory, macOS TCC has revoked Desktop access. Fix: System Settings →
-   Privacy & Security → Files and Folders → grant the terminal app Desktop
-   access, then restart the terminal. It is not a code problem.
+   `patch-package` sweeps build output in — the first attempt produced 7.8 MB
+   including a modulemap with an absolute local path. The correct patch is ~1 KB
+   and touches one file.
+5. If tools return `EPERM` / "Operation not permitted" on this directory, macOS
+   TCC has revoked Desktop access. System Settings → Privacy & Security → Files
+   and Folders → grant the terminal Desktop access, then restart it.
 
-## Rulings made so far
+## Correction to the earlier handoff
+
+The previous status document recorded "the native build **succeeds**" with a
+path to `faisal.app`. That was wrong. The bundle at that path contained only an
+empty `Frameworks/` directory — no binary, no `Info.plist` — which is why
+`simctl install` reported "Missing bundle ID". The build had never succeeded,
+and two real failures (the Swift error, then the codesign error) were hidden
+behind that claim.
+
+## Rulings made across Phase 0
 
 - **`.superpowers/` added to `.gitignore`** (`a5247c6`) — agent scratch, public remote.
 - **Four commits instead of the spec's two** — a phase that dies mid-execution leaves banked, reviewable state. Raised with the human partner, not countermanded.
-- **`run:ios` replaces `start --ios`** in Task 1 Step 7 and Task 3 Step 2 — approved by the human partner as a plan deviation.
-- **Scaffold committed before its gate passed** — banked rather than left dirty.
-- **`app.json` cannot carry the comment the spec wanted** at the `web.output` config site (strict JSON). That warning lives in `README.md` and `CLAUDE.md` instead.
-- **`patch-package` added as a dependency and a `postinstall` script** — the Xcode 26.2 fix has to survive `npm install` for all four of us, so it cannot live only in one machine's `node_modules`. Cost if wrong: one devDependency and a postinstall step.
-- **iCloud Desktop sync turned off rather than relocating the repo** — the human partner's call, made against the alternatives above.
+- **`run:ios` replaces `start --ios`** in Task 1 Step 7 and Task 3 Step 2 — approved as a plan deviation.
+- **Scaffold committed before its gate passed** — banked rather than left dirty; the outstanding gate was recorded until it passed.
+- **`app.json` cannot carry the comment the spec wanted** (strict JSON). The warning lives in `README.md` and `CLAUDE.md` instead.
+- **`patch-package` added with a `postinstall` script** — the Xcode 26.2 fix has to survive `npm install` on four machines, so it cannot live only in one `node_modules`.
+- **iCloud Desktop sync turned off rather than relocating the repo** — the human partner's call. The repo was briefly moved to `~/Downloads` and moved back once sync was off.
+- **`CLAUDE.md`'s verified section was withheld until the Simulator rendered.** Its text asserts that relative `fetch` resolves *from native*; `curl` proves only the server side. Writing an unverified claim into shared memory is the exact failure that document exists to prevent.
 
-## Still blocked on the human partner (not Phase 0, but upcoming)
+## Still blocked on the human partner — this is now the critical path
 
-- **Persona voice sample lines** — `[ASK US]` in `CLAUDE.md`. Blocks all four prompt blocks.
-- **Real Doha restaurant data** — `[ASK US]`. Use `TEST_RESTAURANT_1`-style fakes until supplied.
+- **Persona voice sample lines** — `[ASK US]` in `CLAUDE.md`. Blocks all four
+  prompt blocks, which are the actual product.
+- **Real Doha restaurant data** — `[ASK US]`. Use `TEST_RESTAURANT_1`-style
+  fakes until supplied; never invent plausible-looking restaurants or prices.
+- **`BRUTAL + OVERRIDING` needs testing against Qwen on day one of Phase 2.**
+  `CLAUDE.md` calls this out as where model alignment bites. Finding it on
+  Aug 26 is too late to switch models.

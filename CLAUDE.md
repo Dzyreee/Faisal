@@ -288,6 +288,59 @@ Kotlin/C#/embedded-only was wrong and drove a worse recommendation.
 Verified on the build machine 17 Aug 2026: Xcode 26.2, iPhone 17 Pro simulator,
 Node 24.13.0.
 
+### Verified 18 Aug 2026 — Expo Router API routes
+
+Confirmed by running Phase 0 end to end, not by reading docs. Recorded here
+because this is shared memory across four people and across cleared sessions;
+anything living only in a transcript costs someone an hour to rediscover.
+
+- **Relative `fetch` from native resolves to the dev server origin in
+  development.** `app/api/health+api.ts` is reachable from the iOS Simulator
+  with a plain `fetch('/api/health')`. Evidence: the Simulator rendered
+  `{"ok":true,"keyLoaded":true}` from `app/index.tsx`, and `curl` against the
+  dev server returned the same.
+- **The `:3001` Node server fallback is RESOLVED as unnecessary.** Later phases
+  must not hedge for it. It stays documented only as the contingency we ruled
+  out.
+- **Metro drops non-`EXPO_PUBLIC_` vars from the client bundle.** Verified by
+  `npx expo export --platform ios` then grepping: zero hits for the secret's
+  value *and* zero for the key name. Mechanism, so nobody re-derives it:
+  `@expo/metro-config/build/transform-worker/dot-env-development.js` skips any
+  key not prefixed `EXPO_PUBLIC_` when building for the client; API routes
+  separately receive all env vars.
+- **`web.output: "server"` gates API routes on native too.** Do not remove the
+  `web` key from `app.json` because "we don't ship web" — it breaks iOS. The
+  warning also lives in `README.md`; `app.json` is strict JSON and cannot carry
+  a comment.
+- **Not tested here:** `origin` in the `expo-router` plugin config. Expo's docs
+  say it becomes mandatory for *production* native builds. We only ran dev, so
+  treat that as documented-but-unproven until someone produces a real build.
+
+### Verified 18 Aug 2026 — two traps that cost this project a day
+
+Both were found the hard way while getting the first Simulator render. Neither
+is our code, and both will bite anyone setting up a fresh machine.
+
+- **Never keep this repo in an iCloud-synced folder.** With "Desktop & Documents
+  Folders" sync on, iCloud's fileprovider stamps `com.apple.FinderInfo` onto
+  framework bundles within seconds of their being created, and `codesign`
+  refuses to sign anything carrying it. The build dies with *"resource fork,
+  Finder information, or similar detritus not allowed."* `xattr -cr` does not
+  fix it — the framework is re-created during the build and re-stamped
+  mid-build, so any strip-before-sign workaround is racing a process that wins
+  in under six seconds. Resolved by turning that sync off.
+  **Diagnostic:** create a directory ending in `.framework` inside the repo,
+  wait ten seconds, run `xattr -lr` on it. `com.apple.provenance` alone is
+  healthy; `com.apple.FinderInfo` means the build cannot codesign.
+- **`patches/expo-modules-jsi+57.0.4.patch` is required to build on Xcode 26.2.**
+  ExpoModulesJSI does not compile under Swift 6.2.3: in
+  `JavaScriptCodable+Date.swift`, the bare `abs(_:)` call is ambiguous because
+  the module builds with Swift/C++ interop and libc++ contributes its own `abs`
+  overloads. `Swift.abs` disambiguates it with identical behaviour. Applied by
+  `patch-package` on `postinstall`, so `npm install` keeps it. 57.0.4 was the
+  latest published version as of 18 Aug 2026 — there is no upstream fix to
+  upgrade to yet, so check before deleting the patch.
+
 ### Why not a web app
 
 We considered Next.js rendering into a phone-frame div. Expo won because we want
