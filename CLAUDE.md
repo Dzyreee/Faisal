@@ -93,6 +93,10 @@ sync the moment one is edited.
 Test all four combinations. Composed blocks sometimes fight each other and
 produce mush; we need to find that early, not on stage.
 
+**Test `BRUTAL + OVERRIDING` on day one.** That is where model alignment bites —
+if the model is going to soften the insults or refuse to refuse, it shows up
+there first. Finding it Aug 26 is too late to change models.
+
 Discrete levels only. No 0–100 continuous slider — the model does not behave
 measurably differently at 60 vs 65, and a control that does nothing will be
 discovered live. The UI may look like a slider if it snaps to positions.
@@ -140,18 +144,41 @@ restaurants or prices that could survive into the demo.** If you need something
 to code against, use obviously-fake names (`TEST_RESTAURANT_1`) that cannot be
 mistaken for real.
 
-### Model layer
+### Model layer — settled 17 Aug 2026
 
-Abstract this too — one interface, swappable implementation.
+Abstract this: one `ModelClient` interface, swappable implementation, provider
+picked by a single config line.
 
-We are evaluating two open-weights models:
-- **Fanar-2-27B-Instruct** (QCRI / HBKU, Qatar) — strong Gulf dialect, big
-  native-angle win, but explicitly aligned to Islamic values and Arab culture,
-  which may make it resist the rude persona.
-- **Qwen 3** — Apache 2.0, steerable, reliable fallback.
+**Qwen 3 (MoE variant) is the model.** Apache 2.0, steerable, decent Arabic. The
+MoE variant matters for the stage — low active parameter count answers
+noticeably faster than a dense model of comparable quality, and response latency
+is visible in front of an audience.
 
-Hosted inference, not local. Make swapping between them a config line so we can
-run the same persona prompt through both and compare.
+**Kimi K2 (modified MIT) is the documented fallback.** Not wired by default. It
+is the swap target if Qwen's `BRUTAL + OVERRIDING` cell comes out limp — K2 has
+better comedic instincts. Because the interface exists, switching is a config
+line, not a rewrite.
+
+**Fanar is out.** Explicitly aligned to Islamic values and Arab culture, which
+fights a persona whose core function is refusing and mocking the user. We
+considered keeping it wired purely to answer the near-certain "did you try the
+Qatari model?" question on stage; decided against. The interface means we can
+add it back for the cost of one config entry if we change our minds.
+
+Ruled out for the same steerability reason: **Gemma 3** (heavily safety-tuned).
+Ruled out on licence: **Llama 4** (Meta community licence carries usage
+restrictions — not OSI open source).
+
+Hosted inference, not local. Exact model ID strings get verified against the
+provider catalogue at wire-up time, not guessed from memory.
+
+**Selection criterion is steerability, not benchmarks.** A model that softens the
+insults makes the *product* look broken, not the model look polite.
+
+**Prompt framing is the first lever, before switching models.** Aligned models
+comply far better with "you are a comedy character in a food app who refuses
+orders" than with "be rude to the user." Same behaviour, different frame. Try
+that before blaming Qwen.
 
 ---
 
