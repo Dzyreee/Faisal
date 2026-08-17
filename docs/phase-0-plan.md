@@ -143,10 +143,23 @@ cd /Users/yacine/Desktop/Faisal && npm install
 - [ ] **Step 7: Verify the app boots in the Simulator**
 
 ```bash
-cd /Users/yacine/Desktop/Faisal && npx expo start --ios
+cd /Users/yacine/Desktop/Faisal && npx expo run:ios
 ```
 
-Expected: Metro starts, the iOS Simulator opens, the app renders "Phase 0".
+**Use `run:ios`, not `start --ios`.** `start --ios` launches the project inside
+**Expo Go**, which shows a one-time onboarding overlay that must be tapped away.
+This machine has no attached display — `screencapture` fails with *"could not
+create image from rect"* — so coordinate-based clicking cannot dismiss it.
+`simctl io booted screenshot` still works because it reads the CoreSimulator
+framebuffer directly rather than going through WindowServer, so the Simulator is
+observable but not touchable. `run:ios` builds a real native dev build and
+launches it directly: no Expo Go, no overlay, nothing to tap. It also matches the
+stage demo more closely than Expo Go does.
+
+The first build takes several minutes and generates `ios/`, which is already in
+`.gitignore` (Task 1 Step 4). Do not commit it.
+
+Expected: the build completes, the iOS Simulator opens, the app renders "Phase 0".
 
 Capture evidence:
 
@@ -436,8 +449,12 @@ The screen renders the **raw** response text, not a parsed field, so a malformed
 - [ ] **Step 2: Run in the Simulator**
 
 ```bash
-cd /Users/yacine/Desktop/Faisal && npx expo start --ios
+cd /Users/yacine/Desktop/Faisal && npx expo run:ios
 ```
+
+`run:ios` for the same reason as Task 1 Step 7: no attached display, so Expo Go's
+onboarding overlay cannot be tapped away. Task 1 already produced the native
+build, so this run is incremental and fast.
 
 - [ ] **Step 3: Verify the render and capture evidence**
 

@@ -15,3 +15,13 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Expo / build output
+node_modules/
+.expo/
+dist/
+web-build/
+*.orig.*
+ios/
+android/
+expo-env.d.ts
