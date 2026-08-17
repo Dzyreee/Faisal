@@ -1,5 +1,6 @@
 # Agent context — CLAUDE.md is tracked on purpose (shared team brief)
 .claude/
+.superpowers/
 
 # OS
 .DS_Store
