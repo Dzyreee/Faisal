@@ -1,0 +1,16 @@
+# Agent context — CLAUDE.md is tracked on purpose (shared team brief)
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / config
+.env
+.env.*
+!.env.example
+
+# Editors
+.vscode/
+.idea/
+*.swp
